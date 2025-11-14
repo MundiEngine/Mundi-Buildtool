@@ -22,6 +22,11 @@ BEGIN_PROPERTIES({{ class_name }})
     {%- else %}
     {{ prop.get_property_type_macro() }}({{ prop.type }}, {{ prop.name }}, "{{ prop.category }}", {{ 'true' if prop.editable else 'false' }}{% if prop.tooltip %}, "{{ prop.tooltip }}"{% endif %})
     {%- endif %}
+    {%- if prop.metadata %}
+    {%- for key, value in prop.metadata.items() %}
+    ADD_PROPERTY_METADATA({{ prop.name }}, "{{ key }}", "{{ value }}")
+    {%- endfor %}
+    {%- endif %}
 {%- endfor %}
 END_PROPERTIES()
 """

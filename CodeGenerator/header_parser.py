@@ -396,8 +396,12 @@ class HeaderParser:
         if category_match:
             prop.category = category_match.group(1)
 
-        # EditAnywhere 체크
+        # EditAnywhere 체크 (PropertyRenderer 위젯용)
         prop.editable = 'EditAnywhere' in metadata
+
+        # LuaReadWrite 체크 (Lua 바인딩용)
+        if 'LuaReadWrite' in metadata:
+            prop.metadata['LuaReadWrite'] = 'true'
 
         # Range 추출
         range_match = re.search(r'Range\s*=\s*"([^"]+)"', metadata)
