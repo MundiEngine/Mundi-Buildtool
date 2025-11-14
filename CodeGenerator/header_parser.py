@@ -42,44 +42,63 @@ class Property:
         self.has_range = has_range
         self.metadata = metadata or {}
 
+    def _get_property_type_enum(self, type_str: str) -> str:
+        """타입 문자열 -> EPropertyType enum 변환"""
+        type_lower = type_str.lower().strip()
+
+        # Primitive 타입 먼저 체크
+        if type_lower in ['bool']:
+            return 'EPropertyType::Bool'
+        elif type_lower in ['int32', 'int', 'uint32', 'unsigned int']:
+            return 'EPropertyType::Int32'
+        elif type_lower in ['float', 'double']:
+            return 'EPropertyType::Float'
+        elif type_lower in ['fstring']:
+            return 'EPropertyType::FString'
+        elif type_lower in ['fname']:
+            return 'EPropertyType::FName'
+        elif type_lower in ['fvector']:
+            return 'EPropertyType::FVector'
+        elif type_lower in ['flinearcolor']:
+            return 'EPropertyType::FLinearColor'
+        # UObject 포인터 타입
+        elif '*' in type_str:
+            if 'umaterial' in type_lower:
+                return 'EPropertyType::Material'
+            elif 'utexture' in type_lower:
+                return 'EPropertyType::Texture'
+            elif 'usound' in type_lower:
+                return 'EPropertyType::Sound'
+            elif 'ustaticmesh' in type_lower:
+                return 'EPropertyType::StaticMesh'
+            elif 'uskeletalmesh' in type_lower:
+                return 'EPropertyType::SkeletalMesh'
+            else:
+                return 'EPropertyType::ObjectPtr'
+        else:
+            return 'EPropertyType::ObjectPtr'  # Fallback
+
     def get_property_type_macro(self) -> str:
         """타입에 맞는 ADD_PROPERTY 매크로 결정 (동적 감지)"""
         type_lower = self.type.lower()
 
-        # TArray 타입 체크 (포인터 체크보다 먼저)
-        if 'tarray' in type_lower:
-            # TArray<UMaterialInterface*> 같은 형태에서 내부 타입 추출
-            match = re.search(r'tarray\s*<\s*(\w+)', self.type, re.IGNORECASE)
-            if match:
-                inner_type = match.group(1) + '*'  # 포인터 추가
+        # TMap 타입 체크 (TArray보다 먼저 - 더 구체적)
+        if 'tmap' in type_lower:
+            template_args = HeaderParser._extract_template_args(self.type)
+            if len(template_args) >= 2:
+                # TMap<Key, Value, ...> 에서 Key와 Value만 사용
+                key_type = template_args[0]
+                value_type = template_args[1]
+                self.metadata['key_type'] = self._get_property_type_enum(key_type)
+                self.metadata['value_type'] = self._get_property_type_enum(value_type)
+            return 'ADD_PROPERTY_MAP'
 
-                # MacroParser를 사용하여 동적으로 매크로 찾기
-                if self._macro_parser:
-                    macro_name = self._macro_parser.get_macro_for_type(inner_type)
-                    if macro_name:
-                        # 매크로 이름에서 EPropertyType 추출
-                        property_type = self._macro_parser.get_property_type_enum(macro_name)
-                        if property_type:
-                            self.metadata['inner_type'] = property_type
-                        else:
-                            self.metadata['inner_type'] = 'EPropertyType::ObjectPtr'
-                    else:
-                        self.metadata['inner_type'] = 'EPropertyType::ObjectPtr'
-                else:
-                    # Fallback: 기존 하드코딩된 방식
-                    inner_type_lower = inner_type.lower()
-                    if 'umaterial' in inner_type_lower:
-                        self.metadata['inner_type'] = 'EPropertyType::Material'
-                    elif 'utexture' in inner_type_lower:
-                        self.metadata['inner_type'] = 'EPropertyType::Texture'
-                    elif 'usound' in inner_type_lower:
-                        self.metadata['inner_type'] = 'EPropertyType::Sound'
-                    elif 'ustaticmesh' in inner_type_lower:
-                        self.metadata['inner_type'] = 'EPropertyType::StaticMesh'
-                    elif 'uskeletalmesh' in inner_type_lower:
-                        self.metadata['inner_type'] = 'EPropertyType::SkeletalMesh'
-                    else:
-                        self.metadata['inner_type'] = 'EPropertyType::ObjectPtr'
+        # TArray 타입 체크
+        if 'tarray' in type_lower:
+            template_args = HeaderParser._extract_template_args(self.type)
+            if template_args:
+                inner_type = template_args[0]
+                self.metadata['inner_type'] = self._get_property_type_enum(inner_type)
             return 'ADD_PROPERTY_ARRAY'
 
         # 특수 타입 체크 (포인터보다 먼저)
@@ -221,6 +240,42 @@ class HeaderParser:
                 depth -= 1
             i += 1
         return text[start_pos:i-1], i
+
+    @staticmethod
+    def _extract_template_args(type_str: str) -> List[str]:
+        """템플릿 인자 추출 (중첩 템플릿 지원)
+        예: "TMap<FString, int32, FDefaultSetAllocator>" -> ["FString", "int32", "FDefaultSetAllocator"]
+        예: "TArray<TMap<FString, int32>>" -> ["TMap<FString, int32>"]
+        """
+        # < > 찾기
+        start = type_str.find('<')
+        end = type_str.rfind('>')
+        if start == -1 or end == -1:
+            return []
+
+        content = type_str[start+1:end]
+        args = []
+        current_arg = ""
+        depth = 0
+
+        for ch in content:
+            if ch == '<':
+                depth += 1
+                current_arg += ch
+            elif ch == '>':
+                depth -= 1
+                current_arg += ch
+            elif ch == ',' and depth == 0:
+                # 최상위 레벨의 콤마만 구분자로 사용
+                args.append(current_arg.strip())
+                current_arg = ""
+            else:
+                current_arg += ch
+
+        if current_arg.strip():
+            args.append(current_arg.strip())
+
+        return args
 
     @staticmethod
     def _parse_uproperty_declarations(content: str):
