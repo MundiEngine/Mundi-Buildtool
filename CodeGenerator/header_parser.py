@@ -136,6 +136,20 @@ class Property:
             else:
                 return 'ADD_PROPERTY'
 
+        # 스크립트 파일 타입 체크
+        # 옵션 1: ScriptFile 메타데이터가 명시된 경우 (우선순위)
+        if 'ScriptFile' in self.metadata:
+            return 'ADD_PROPERTY_SCRIPT'
+
+        # 옵션 2: 변수명 기반 자동 인식 (FString 타입 + 변수명에 'script' 또는 'lua' 포함)
+        if self.type == 'FString':
+            name_lower = self.name.lower()
+            if 'script' in name_lower or 'lua' in name_lower:
+                # 기본 확장자 설정 (.lua)
+                if 'ScriptFile' not in self.metadata:
+                    self.metadata['ScriptFile'] = '.lua'
+                return 'ADD_PROPERTY_SCRIPT'
+
         # 범위가 있는 프로퍼티
         if self.has_range:
             return 'ADD_PROPERTY_RANGE'
@@ -472,6 +486,11 @@ class HeaderParser:
         tooltip_match = re.search(r'Tooltip\s*=\s*"([^"]+)"', metadata)
         if tooltip_match:
             prop.tooltip = tooltip_match.group(1)
+
+        # ScriptFile 메타데이터 추출 (예: ScriptFile=".lua")
+        script_file_match = re.search(r'ScriptFile\s*=\s*"([^"]+)"', metadata)
+        if script_file_match:
+            prop.metadata['ScriptFile'] = script_file_match.group(1)
 
         return prop
 

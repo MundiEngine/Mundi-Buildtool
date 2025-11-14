@@ -21,12 +21,14 @@ BEGIN_PROPERTIES({{ class_name }})
     ADD_PROPERTY_ARRAY({{ prop.metadata.get('inner_type', 'EPropertyType::ObjectPtr') }}, {{ prop.name }}, "{{ prop.category }}", {{ 'true' if prop.editable else 'false' }}{% if prop.tooltip %}, "{{ prop.tooltip }}"{% endif %})
     {%- elif prop.get_property_type_macro() == 'ADD_PROPERTY_MAP' %}
     ADD_PROPERTY_MAP({{ prop.metadata.get('key_type', 'EPropertyType::FString') }}, {{ prop.metadata.get('value_type', 'EPropertyType::Int32') }}, {{ prop.name }}, "{{ prop.category }}", {{ 'true' if prop.editable else 'false' }}{% if prop.tooltip %}, "{{ prop.tooltip }}"{% endif %})
+    {%- elif prop.get_property_type_macro() == 'ADD_PROPERTY_SCRIPT' %}
+    ADD_PROPERTY_SCRIPT({{ prop.type }}, {{ prop.name }}, "{{ prop.category }}", "{{ prop.metadata.get('ScriptFile', '.lua') }}", {{ 'true' if prop.editable else 'false' }}{% if prop.tooltip %}, "{{ prop.tooltip }}"{% endif %})
     {%- else %}
     {{ prop.get_property_type_macro() }}({{ prop.type }}, {{ prop.name }}, "{{ prop.category }}", {{ 'true' if prop.editable else 'false' }}{% if prop.tooltip %}, "{{ prop.tooltip }}"{% endif %})
     {%- endif %}
     {%- if prop.metadata %}
     {%- for key, value in prop.metadata.items() %}
-    {%- if key not in ['inner_type', 'key_type', 'value_type'] %}
+    {%- if key not in ['inner_type', 'key_type', 'value_type', 'ScriptFile'] %}
     ADD_PROPERTY_METADATA({{ prop.name }}, "{{ key }}", "{{ value }}")
     {%- endif %}
     {%- endfor %}
