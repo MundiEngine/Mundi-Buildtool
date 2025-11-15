@@ -184,10 +184,11 @@ class Function:
 
 @dataclass
 class ClassInfo:
-    """클래스 정보"""
+    """클래스/구조체 정보"""
     name: str
-    parent: str
+    parent: str  # struct는 빈 문자열 가능
     header_file: Path
+    type: str = "class"  # "class" 또는 "struct"
     properties: List[Property] = field(default_factory=list)
     functions: List[Function] = field(default_factory=list)
     is_component: bool = False
@@ -224,8 +225,9 @@ class HeaderParser:
 
         print(f"[HeaderParser] Initialized with {len(self.macro_parser.macros)} macros from ObjectMacros.h")
 
-    # UCLASS 시작 패턴
+    # UCLASS/USTRUCT 시작 패턴
     UCLASS_START = re.compile(r'UCLASS\s*\(')
+    USTRUCT_START = re.compile(r'USTRUCT\s*\(')
 
     # 기존 패턴들
     UFUNCTION_PATTERN = re.compile(
@@ -236,6 +238,11 @@ class HeaderParser:
 
     CLASS_PATTERN = re.compile(
         r'class\s+(\w+)\s*:\s*public\s+(\w+)'
+    )
+
+    # struct 패턴 (상속 선택적)
+    STRUCT_PATTERN = re.compile(
+        r'struct\s+(\w+)'
     )
 
     GENERATED_REFLECTION_PATTERN = re.compile(
@@ -348,7 +355,7 @@ class HeaderParser:
         return content
 
     def parse_header(self, header_path: Path) -> Optional[ClassInfo]:
-        """헤더 파일 파싱"""
+        """헤더 파일 파싱 (UCLASS/USTRUCT 모두 지원)"""
         content = header_path.read_text(encoding='utf-8')
 
         # 주석을 제거한 버전으로 GENERATED_REFLECTION_BODY() 체크
@@ -358,24 +365,46 @@ class HeaderParser:
         if not self.GENERATED_REFLECTION_PATTERN.search(content_no_comments):
             return None
 
-        # 클래스 정보 추출 (주석 제거된 버전에서)
-        class_match = self.CLASS_PATTERN.search(content_no_comments)
-        if not class_match:
-            return None
+        # UCLASS vs USTRUCT 구분
+        uclass_match = self.UCLASS_START.search(content_no_comments)
+        ustruct_match = self.USTRUCT_START.search(content_no_comments)
 
-        class_name = class_match.group(1)
-        parent_name = class_match.group(2)
+        if uclass_match:
+            # UCLASS: class 패턴으로 파싱
+            class_match = self.CLASS_PATTERN.search(content_no_comments)
+            if not class_match:
+                return None
+
+            class_name = class_match.group(1)
+            parent_name = class_match.group(2)
+            type_kind = "class"
+            metadata_match = uclass_match
+
+        elif ustruct_match:
+            # USTRUCT: struct 패턴으로 파싱
+            struct_match = self.STRUCT_PATTERN.search(content_no_comments)
+            if not struct_match:
+                return None
+
+            class_name = struct_match.group(1)
+            parent_name = ""  # struct는 상속 없음
+            type_kind = "struct"
+            metadata_match = ustruct_match
+
+        else:
+            # UCLASS/USTRUCT 없으면 무시
+            return None
 
         class_info = ClassInfo(
             name=class_name,
             parent=parent_name,
-            header_file=header_path
+            header_file=header_path,
+            type=type_kind
         )
 
-        # UCLASS 메타데이터 파싱 (주석 제거된 버전에서)
-        uclass_match = self.UCLASS_START.search(content_no_comments)
-        if uclass_match:
-            metadata_start = uclass_match.end()
+        # 메타데이터 파싱 (UCLASS/USTRUCT 공통)
+        if metadata_match:
+            metadata_start = metadata_match.end()
             metadata, _ = self._extract_balanced_parens(content_no_comments, metadata_start)
             class_info.uclass_metadata = self._parse_metadata(metadata)
 

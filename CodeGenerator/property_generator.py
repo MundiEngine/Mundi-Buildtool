@@ -8,7 +8,7 @@ from header_parser import ClassInfo, Property
 
 
 PROPERTY_TEMPLATE = """
-BEGIN_PROPERTIES({{ class_name }})
+{{ begin_macro }}({{ class_name }})
 {%- if mark_type == 'SPAWNABLE' %}
     MARK_AS_SPAWNABLE("{{ display_name }}", "{{ description }}")
 {%- elif mark_type == 'COMPONENT' %}
@@ -45,25 +45,31 @@ class PropertyGenerator:
         self.template = Template(PROPERTY_TEMPLATE)
 
     def generate(self, class_info: ClassInfo) -> str:
-        """ClassInfo로부터 BEGIN_PROPERTIES 블록 생성"""
+        """ClassInfo로부터 BEGIN_PROPERTIES/BEGIN_STRUCT_PROPERTIES 블록 생성"""
 
-        # mark_type 결정:
-        # 1. Abstract 클래스는 MARK 없음 (언리얼 엔진 패턴)
-        # 2. AActor/UActorComponent 자체는 MARK 없음
-        # 3. AActor를 상속받은 클래스는 MARK_AS_SPAWNABLE (직접/간접)
-        # 4. UActorComponent를 상속받은 클래스는 MARK_AS_COMPONENT (직접/간접)
-        # 5. 그 외 (순수 UObject 등)는 MARK 없음
-        mark_type = None
+        # struct인지 class인지에 따라 BEGIN 매크로 이름과 mark_type 결정
+        if hasattr(class_info, 'type') and class_info.type == "struct":
+            begin_macro = "BEGIN_STRUCT_PROPERTIES"
+            mark_type = None  # struct는 MARK 매크로 없음
+        else:
+            begin_macro = "BEGIN_PROPERTIES"
+            # mark_type 결정:
+            # 1. Abstract 클래스는 MARK 없음 (언리얼 엔진 패턴)
+            # 2. AActor/UActorComponent 자체는 MARK 없음
+            # 3. AActor를 상속받은 클래스는 MARK_AS_SPAWNABLE (직접/간접)
+            # 4. UActorComponent를 상속받은 클래스는 MARK_AS_COMPONENT (직접/간접)
+            # 5. 그 외 (순수 UObject 등)는 MARK 없음
+            mark_type = None
 
-        if class_info.is_abstract:
-            mark_type = None  # Abstract 클래스는 에디터에 노출 안 함
-        elif class_info.name in ['AActor', 'UActorComponent']:
-            mark_type = None  # 베이스 클래스는 MARK 없음
-        elif hasattr(class_info, 'is_derived_from') and class_info.is_derived_from('AActor'):
-            mark_type = 'SPAWNABLE'  # AActor 파생 (직접/간접)
-        elif hasattr(class_info, 'is_derived_from') and class_info.is_derived_from('UActorComponent'):
-            mark_type = 'COMPONENT'  # UActorComponent 파생 (직접/간접)
-        # else: mark_type은 None으로 유지 (순수 UObject 등)
+            if class_info.is_abstract:
+                mark_type = None  # Abstract 클래스는 에디터에 노출 안 함
+            elif class_info.name in ['AActor', 'UActorComponent']:
+                mark_type = None  # 베이스 클래스는 MARK 없음
+            elif hasattr(class_info, 'is_derived_from') and class_info.is_derived_from('AActor'):
+                mark_type = 'SPAWNABLE'  # AActor 파생 (직접/간접)
+            elif hasattr(class_info, 'is_derived_from') and class_info.is_derived_from('UActorComponent'):
+                mark_type = 'COMPONENT'  # UActorComponent 파생 (직접/간접)
+            # else: mark_type은 None으로 유지 (순수 UObject 등)
 
         # DisplayName과 Description 결정
         display_name = class_info.display_name or class_info.name
@@ -79,15 +85,17 @@ class PropertyGenerator:
                 mark_line = ''
 
             return f"""
-BEGIN_PROPERTIES({class_info.name})
+{begin_macro}({class_info.name})
 {mark_line}
 END_PROPERTIES()
 """
 
+        # 템플릿 재사용: begin_macro만 다르게 전달
         return self.template.render(
+            begin_macro=begin_macro,
             class_name=class_info.name,
             mark_type=mark_type,
-            display_name=class_info.display_name or class_info.name,
-            description=class_info.description or f"Auto-generated {class_info.name}",
+            display_name=display_name,
+            description=description,
             properties=class_info.properties
         )
