@@ -82,6 +82,15 @@ class Property:
         """타입에 맞는 ADD_PROPERTY 매크로 결정 (동적 감지)"""
         type_lower = self.type.lower()
 
+        # TSubclassOf<T> 타입 체크 (가장 먼저 - 가장 구체적)
+        if 'tsubclassof' in type_lower:
+            template_args = HeaderParser._extract_template_args(self.type)
+            if template_args:
+                base_class = template_args[0].strip()  # "UAnimInstance"
+                # BaseClass를 Metadata에 저장 (PropertyRenderer에서 필터링에 사용)
+                self.metadata['BaseClass'] = base_class
+            return 'ADD_PROPERTY'
+
         # TMap 타입 체크 (TArray보다 먼저 - 더 구체적)
         if 'tmap' in type_lower:
             template_args = HeaderParser._extract_template_args(self.type)
