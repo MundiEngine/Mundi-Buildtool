@@ -192,6 +192,14 @@ class Function:
 
 
 @dataclass
+class EnumInfo:
+    """Enum 정보"""
+    name: str
+    header_file: Path
+    values: Dict[str, int] = field(default_factory=dict)  # {name: value}
+    underlying_type: str = "uint8"  # enum class EName : uint8
+
+@dataclass
 class ClassInfo:
     """클래스/구조체 정보"""
     name: str
@@ -206,6 +214,7 @@ class ClassInfo:
     display_name: str = ""
     description: str = ""
     uclass_metadata: Dict[str, str] = field(default_factory=dict)
+    enums: List[EnumInfo] = field(default_factory=list)  # 헤더 내 UENUM들
 
 
 class HeaderParser:
@@ -364,15 +373,35 @@ class HeaderParser:
         return content
 
     def parse_header(self, header_path: Path) -> Optional[ClassInfo]:
-        """헤더 파일 파싱 (UCLASS/USTRUCT 모두 지원)"""
+        """헤더 파일 파싱 (UCLASS/USTRUCT/UENUM 모두 지원)"""
         content = header_path.read_text(encoding='utf-8')
 
-        # 주석을 제거한 버전으로 GENERATED_REFLECTION_BODY() 체크
+        # 주석을 제거한 버전으로 파싱
         content_no_comments = self._remove_comments(content)
 
         # GENERATED_REFLECTION_BODY() 체크
-        if not self.GENERATED_REFLECTION_PATTERN.search(content_no_comments):
+        has_reflection_body = self.GENERATED_REFLECTION_PATTERN.search(content_no_comments)
+
+        # UENUM() 체크
+        has_uenum = re.search(r'UENUM\s*\(', content_no_comments)
+
+        # 둘 다 없으면 무시
+        if not has_reflection_body and not has_uenum:
             return None
+
+        # UENUM만 있는 경우: enum만 파싱하여 반환
+        if has_uenum and not has_reflection_body:
+            # 파일명 기반으로 더미 ClassInfo 생성
+            dummy_name = header_path.stem  # "AnimationTypes" 등
+            class_info = ClassInfo(
+                name=dummy_name,
+                parent="",
+                header_file=header_path,
+                type="enum_only"  # UENUM만 있는 특수 타입
+            )
+            # UENUM 파싱
+            class_info.enums = self._parse_enums(content_no_comments, header_path)
+            return class_info
 
         # UCLASS vs USTRUCT 구분
         uclass_match = self.UCLASS_START.search(content_no_comments)
@@ -471,6 +500,9 @@ class HeaderParser:
             # 맨 앞에 추가
             class_info.properties.insert(0, object_name_prop)
 
+        # UENUM 파싱
+        class_info.enums = self._parse_enums(content_no_comments, header_path)
+
         return class_info
 
     def _parse_metadata(self, metadata: str) -> Dict[str, str]:
@@ -493,6 +525,60 @@ class HeaderParser:
                 result[flag] = 'true'
 
         return result
+
+    def _parse_enums(self, content: str, header_path: Path) -> List[EnumInfo]:
+        """UENUM() 파싱"""
+        enums = []
+
+        # UENUM() 다음에 enum class 패턴 찾기
+        # 예: UENUM()\n enum class EAnimationMode : uint8 { ... };
+        pattern = r'UENUM\s*\([^)]*\)\s*enum\s+class\s+(\w+)\s*:\s*(\w+)\s*\{([^}]+)\}'
+
+        for match in re.finditer(pattern, content, re.DOTALL):
+            enum_name = match.group(1)
+            underlying_type = match.group(2)
+            enum_body = match.group(3)
+
+            # enum 값들 파싱
+            values = {}
+            current_value = 0
+
+            # 콤마로 구분된 항목들 파싱
+            items = enum_body.split(',')
+            for item in items:
+                item = item.strip()
+                if not item or item.startswith('//'):
+                    continue
+
+                # 주석 제거
+                item = re.sub(r'//.*$', '', item).strip()
+                if not item:
+                    continue
+
+                # 명시적 값 할당 체크 (예: Value = 10)
+                assign_match = re.match(r'(\w+)\s*=\s*(\d+)', item)
+                if assign_match:
+                    name = assign_match.group(1)
+                    value = int(assign_match.group(2))
+                    values[name] = value
+                    current_value = value + 1
+                else:
+                    # 자동 인덱싱
+                    name_match = re.match(r'(\w+)', item)
+                    if name_match:
+                        name = name_match.group(1)
+                        values[name] = current_value
+                        current_value += 1
+
+            enum_info = EnumInfo(
+                name=enum_name,
+                header_file=header_path,
+                values=values,
+                underlying_type=underlying_type
+            )
+            enums.append(enum_info)
+
+        return enums
 
     def _parse_property(self, name: str, type_str: str, metadata: str) -> Property:
         """프로퍼티 메타데이터 파싱"""
