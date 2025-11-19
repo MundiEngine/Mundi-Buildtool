@@ -131,16 +131,21 @@ class Property:
                 if macro_name:
                     return macro_name
 
-            # Fallback: 기존 하드코딩된 방식
-            if 'utexture' in type_lower:
+            # Fallback: 정확한 타입 매칭 방식
+            # 'class ' 접두사와 '*' 접미사 제거 후 정확히 비교
+            base_type = type_lower.replace('class ', '').replace('*', '').strip()
+
+            # 리소스 타입들은 정확한 클래스명으로만 매칭
+            # (Component, Instance 등 파생 타입 제외)
+            if base_type in ['utexture', 'utexture2d']:
                 return 'ADD_PROPERTY_TEXTURE'
-            elif 'ustaticmesh' in type_lower:
+            elif base_type == 'ustaticmesh':
                 return 'ADD_PROPERTY_STATICMESH'
-            elif 'uskeletalmesh' in type_lower:
+            elif base_type == 'uskeletalmesh':
                 return 'ADD_PROPERTY_SKELETALMESH'
-            elif 'umaterial' in type_lower:
+            elif base_type == 'umaterial':
                 return 'ADD_PROPERTY_MATERIAL'
-            elif 'usound' in type_lower:
+            elif base_type in ['usound', 'usoundbase']:
                 return 'ADD_PROPERTY_AUDIO'
             else:
                 return 'ADD_PROPERTY'

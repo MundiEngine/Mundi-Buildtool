@@ -132,13 +132,17 @@ class MacroParser:
         if '*' not in cpp_type:
             return None
 
-        # 각 매크로의 패턴들과 매칭 시도
+        # 정확한 타입 매칭을 위해 base type 추출
+        # 'class UTexture*' -> 'utexture'
+        base_type = type_lower.replace('class ', '').replace('*', '').strip()
+
+        # 각 매크로의 패턴들과 정확히 매칭 시도
         for macro_name, macro_info in self.macros.items():
             patterns = macro_info.get_cpp_type_patterns()
 
-            # 여러 패턴 중 하나라도 매칭되면 성공
+            # 여러 패턴 중 하나라도 정확히 일치하면 성공
             for pattern in patterns:
-                if pattern and pattern in type_lower:
+                if pattern and base_type == pattern:
                     return macro_name
 
         return None
